@@ -430,8 +430,6 @@ def vertex_group_weight_generator(mesh: Mesh, vertex_group_index: int) -> Iterat
 # Figures out what needs to be added to each affected Shape key, then iterates through all the affected Shape keys,
 # getting the current coordinates, adding the corresponding amount to it and then setting that as the new coordinates.
 # Gets and sets Shape Key coordinates manually with #foreach_get and #foreach_set.
-# The slowest part of this function when the number of Vertices increase are the #foreach_set and #foreach_get calls, so
-# the number of calls of those should be minimised for performance.
 def apply_new_reference_key(obj: Object,
                             new_ref: ShapeKey,
                             keys_relative_to_new_ref: set[ShapeKey],
