@@ -696,7 +696,7 @@ def unregister():
     bpy.utils.unregister_class(ApplyShapeKeyToReferenceKey)
 
 
-# For testing in Blender Text Editor.
+# For testing in Blender's Text Editor.
 if __name__ == "__main__":
     # Try and unregister the previously registered version.
     unregister_attribute = "shape_key_to_basis_unregister_old"
