@@ -515,47 +515,47 @@ def apply_new_reference_key(obj: Object,
                                                np.add(temp_co_array, difference_co_flat_scaled, out=temp_co_array))
 
         # Shorthand key:
-        # NB = new_ref
-        # NB.r = new_ref.relative_key
-        # r(NB) = reversed(new_ref)
-        # r(NB).r = reversed(new_ref).relative_key
-        # NB.v = new_ref.value (`value`)
-        # NB.vg = new_ref.vertex_group
+        # NR = new_ref
+        # NR.r = new_ref.relative_key
+        # r(NR) = reversed(new_ref)
+        # r(NR).r = reversed(new_ref).relative_key
+        # NR.v = new_ref.value (`value`)
+        # NR.vg = new_ref.vertex_group
         #
-        # The difference between r(NB) and r(NB).r needs to be the negative of:
-        #   (r(NB) - r(NB).r) * NB.vg = -((NB - NB.r) * NB.v * NB.vg)
-        #                             = -(NB - NB.r) * NB.v * NB.vg
-        # NB.vg cancels on both sides, leaving:
-        #   r(NB) - r(NB).r = -(NB - NB.r) * NB.v
-        # Rearranging for r(NB) gives:
-        #   r(NB) = r(NB).r - (NB - NB.r) * NB.v
-        # Note that (NB - NB.r) * NB.v = difference_co_flat_value_scaled so:
-        #   r(NB) = r(NB).r - difference_co_flat_value_scaled
-        # Note that r(NB).r = (NB.r + difference_co_flat_scaled) because that has been added to it.
-        #   r(NB) = NB.r + difference_co_flat_scaled - difference_co_flat_value_scaled
-        # Note that r(NB) = NB + X where X is what needs to be found to add to NB (and all Shape Keys relative to NB so
+        # The difference between r(NR) and r(NR).r needs to be the negative of:
+        #   (r(NR) - r(NR).r) * NR.vg = -((NR - NR.r) * NR.v * NR.vg)
+        #                             = -(NR - NR.r) * NR.v * NR.vg
+        # NR.vg cancels on both sides, leaving:
+        #   r(NR) - r(NR).r = -(NR - NR.r) * NR.v
+        # Rearranging for r(NR) gives:
+        #   r(NR) = r(NR).r - (NR - NR.r) * NR.v
+        # Note that (NR - NR.r) * NR.v = difference_co_flat_value_scaled so:
+        #   r(NR) = r(NR).r - difference_co_flat_value_scaled
+        # Note that r(NR).r = (NR.r + difference_co_flat_scaled) because that has been added to it.
+        #   r(NR) = NR.r + difference_co_flat_scaled - difference_co_flat_value_scaled
+        # Note that r(NR) = NR + X where X is what needs to be found to add to NR (and all Shape Keys relative to NR so
         # that their relative differences remain the same).
-        #   NB + X = NB.r + difference_co_flat_scaled - difference_co_flat_value_scaled
-        #   X = NB.r - NB + difference_co_flat_scaled - difference_co_flat_value_scaled
-        #   X = -(NB - NB.r) + difference_co_flat_scaled - difference_co_flat_value_scaled
+        #   NR + X = NR.r + difference_co_flat_scaled - difference_co_flat_value_scaled
+        #   X = NR.r - NR + difference_co_flat_scaled - difference_co_flat_value_scaled
+        #   X = -(NR - NR.r) + difference_co_flat_scaled - difference_co_flat_value_scaled
         # Fully expanding out would give:
-        #   X = -(NB - NB.r) + (NB - NB.r) * NB.v * NB.vg - (NB - NB.r) * NB.v
+        #   X = -(NR - NR.r) + (NR - NR.r) * NR.v * NR.vg - (NR - NR.r) * NR.v
         #
-        # TODO: NB.vg is calculated now to simplify code, despite it being slower, so it may be possible to factorize
+        # TODO: NR.vg is calculated now to simplify code, despite it being slower, so it may be possible to factorize
         #  better now. e.g.
-        #   X = -(NB - NB.r) + (NB - NB.r) * NB.v * NB.vg - (NB - NB.r) * NB.v
-        #   X = (NB - NB.r) * (-1 + 1 * NB.v * NB.vg - 1 * NB.v)
-        #   X = (NB - NB.r) * (-1 + NB.v * NB.vg - NB.v)
-        #   X = (NB - NB.r) * (-1 + NB.v(NB.vg - 1))
-        #   X = difference_co_flat * (-1 + NB.v(NB.vg - 1))
+        #   X = -(NR - NR.r) + (NR - NR.r) * NR.v * NR.vg - (NR - NR.r) * NR.v
+        #   X = (NR - NR.r) * (-1 + 1 * NR.v * NR.vg - 1 * NR.v)
+        #   X = (NR - NR.r) * (-1 + NR.v * NR.vg - NR.v)
+        #   X = (NR - NR.r) * (-1 + NR.v(NR.vg - 1))
+        #   X = difference_co_flat * (-1 + NR.v(NR.vg - 1))
         # OUTDATED:
-        # In the case of there being a vertex group, it is too costly to calculate NB.vg on its own, so we will leave it
+        # In the case of there being a vertex group, it is too costly to calculate NR.vg on its own, so we will leave it
         # at:
-        #   X = -(NB - NB.r) + difference_co_flat_scaled - (NB - NB.r) * NB.v
+        #   X = -(NR - NR.r) + difference_co_flat_scaled - (NR - NR.r) * NR.v
         #   Which we can either factor to
-        #       X = (NB - NB.r)(-1 - NB.v) + difference_co_flat_scaled
-        #       X = difference_co_flat * (-1 - NB.v) + difference_co_flat_scaled
-        #   Or, as NB - NB.r = difference_co_flat, calculate as
+        #       X = (NR - NR.r)(-1 - NR.v) + difference_co_flat_scaled
+        #       X = difference_co_flat * (-1 - NR.v) + difference_co_flat_scaled
+        #   Or, as NR - NR.r = difference_co_flat, calculate as
         #       X = -difference_co_flat + difference_co_flat_scaled - difference_co_flat_value_scaled
         #
         # The numpy functions take close to a negligible amount of the total function time, so the choice is not very
@@ -578,10 +578,10 @@ def apply_new_reference_key(obj: Object,
             for key_block in keys_relative_to_new_ref:
                 fast_mesh_shape_key_co_foreach_get(key_block, temp_co_array)
                 fast_mesh_shape_key_co_foreach_set(key_block, np.add(temp_co_array, temp_co_array2, out=temp_co_array))
-        # But for there not being a vertex group, the NB.vg term can be eliminated as it becomes effectively 1.0:
-        #   X = -(NB - NB.r) + (NB - NB.r) * NB.v - (NB - NB.r) * NB.v
+        # But for there not being a vertex group, the NR.vg term can be eliminated as it becomes effectively 1.0:
+        #   X = -(NR - NR.r) + (NR - NR.r) * NR.v - (NR - NR.r) * NR.v
         # Then the last part cancels out:
-        #   X = -(NB - NB.r)
+        #   X = -(NR - NR.r)
         # Giving X = -difference_co_flat.
         else:
             # Instead of adding the difference_co_flat_scaled to each Shape Key it will be subtracted from each Shape
@@ -589,10 +589,10 @@ def apply_new_reference_key(obj: Object,
             # The coordinates for `new_ref` have already been acquired, so it can be done separately to avoid a
             # #foreach_get call.
             # Note that:
-            #   difference_co_flat = NB - NB.r
-            # Rearrange for NB.r:
-            #   NB.r = NB - difference_co_flat
-            # Instead of doing `np.subtract(new_ref_co_flat, difference_co_flat)`, NB can simply be set to NB.r.
+            #   difference_co_flat = NR - NR.r
+            # Rearrange for NR.r:
+            #   NR.r = NR - difference_co_flat
+            # Instead of doing `np.subtract(new_ref_co_flat, difference_co_flat)`, NR can simply be set to NR.r.
             fast_mesh_shape_key_co_foreach_set(new_ref, new_ref_relative_key_co_flat)
             # And the rest of the Shape Keys
             for key_block in keys_relative_to_new_ref:
@@ -617,34 +617,34 @@ def apply_new_reference_key(obj: Object,
         # The difference between the reversed Shape Key and its Relative Key needs to equal the negative of the
         # difference between `new_ref` and `new_ref`.relative_key multiplied.
         # `new_ref.vertex_group` should be present on both.
-        #   (r(NB) - r(NB).r) * NB.vg = -((NB - NB.r) * NB.v * NB.vg)
-        #                             = -(NB - NB.r) * NB.v * NB.vg
-        # NB.vg cancels on both sides, leaving:
-        #   r(NB) - r(NB).r = -(NB - NB.r) * NB.v
-        # r(NB).r is unchanged, meaning r(NB).r = NB.r
-        #   r(NB) - NB.r = -(NB - NB.r) * NB.v
-        # r(NB) = X + NB where X is what needs to be found to add
-        #   X + NB - NB.r = -(NB - NB.r) * NB.v
+        #   (r(NR) - r(NR).r) * NR.vg = -((NR - NR.r) * NR.v * NR.vg)
+        #                             = -(NR - NR.r) * NR.v * NR.vg
+        # NR.vg cancels on both sides, leaving:
+        #   r(NR) - r(NR).r = -(NR - NR.r) * NR.v
+        # r(NR).r is unchanged, meaning r(NR).r = NR.r
+        #   r(NR) - NR.r = -(NR - NR.r) * NR.v
+        # r(NR) = X + NR where X is what needs to be found to add
+        #   X + NR - NR.r = -(NR - NR.r) * NR.v
         # Rearrange for X:
-        #   X = -(NB - NB.r) - (NB - NB.r) * NB.v
+        #   X = -(NR - NR.r) - (NR - NR.r) * NR.v
         #
-        # (NB - NB.r) can be factorised:
-        #   X = (NB - NB.r)(-1 - NB.v)
-        # Note that (NB - NB.r) is difference_co_flat, giving:
-        #   X = difference_co_flat * (-1 - NB.v)
+        # (NR - NR.r) can be factorised:
+        #   X = (NR - NR.r)(-1 - NR.v)
+        # Note that (NR - NR.r) is difference_co_flat, giving:
+        #   X = difference_co_flat * (-1 - NR.v)
         #
-        # Alternatively, instead of factorising, note that (NB - NB.r) * NB.v is difference_co_flat_value_scaled:
-        #   X = -(NB - NB.r) - difference_co_flat_value_scaled
-        # Note that (NB - NB.r) is difference_co_flat, giving
+        # Alternatively, instead of factorising, note that (NR - NR.r) * NR.v is difference_co_flat_value_scaled:
+        #   X = -(NR - NR.r) - difference_co_flat_value_scaled
+        # Note that (NR - NR.r) is difference_co_flat, giving
         #   X = -difference_co_flat - difference_co_flat_value_scaled
         # Or
         #   X = -(difference_co_flat + difference_co_flat_value_scaled)
         #
-        # Since NB.vg is not present, it does not matter whether `new_ref` has a Vertex Group or not.
+        # Since NR.vg is not present, it does not matter whether `new_ref` has a Vertex Group or not.
         #
         # As with before, the multiplication option is used due to it scaling slightly better with a larger number of
         # Vertices:
-        # X = difference_co_flat * (-1 - NB.v)
+        # X = difference_co_flat * (-1 - NR.v)
         np.multiply(difference_co_flat, -1 - new_ref.value, out=temp_co_array2)
 
         # The coordinates for `new_ref` have already been acquired, so it can be done separately from the others to save
