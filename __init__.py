@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Apply Shape Key to Basis",
     "author": "Mysteryem",
-    "version": (0, 1, 0),
+    "version": (0, 1, 1),
     "blender": (3, 3, 0),
     "location": "Properties > Data > Shape Key Specials menu > Apply Shape Key to Basis",
     "description": "Adds a tool for applying the active shape key to the Basis and propagating the change to dependent"
@@ -659,7 +659,15 @@ def apply_new_reference_key(obj: Object,
     # entered and exited, which can cause odd behaviour when creating Shape Keys with `from_mix=False`, when removing
     # all Shape Keys or exporting as a format that supports exporting Shape Keys.
     fast_mesh_shape_key_co_foreach_get(mesh.shape_keys.reference_key, temp_co_array)
-    mesh.vertices.foreach_set("co", temp_co_array)
+    # The "position" Attribute giving faster access to a Mesh's Vertex positions was added in Blender 3.5.
+    if bpy.app.version >= (3, 5):
+        position_attribute = mesh.attributes.get("position")
+        if (position_attribute
+                and position_attribute.data_type == 'FLOAT_VECTOR'
+                and position_attribute.domain == 'POINT'):
+            position_attribute.data.foreach_set("vector", temp_co_array)
+    else:
+        mesh.vertices.foreach_set("co", temp_co_array)
 
 
 # Registration
