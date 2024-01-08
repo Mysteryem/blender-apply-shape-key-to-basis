@@ -540,17 +540,14 @@ def apply_new_reference_key(obj: Object,
         #   X = -(NR - NR.r) + difference_co_flat_scaled - difference_co_flat_value_scaled
         # Fully expanding out would give:
         #   X = -(NR - NR.r) + (NR - NR.r) * NR.v * NR.vg - (NR - NR.r) * NR.v
-        #
-        # TODO: NR.vg is calculated now to simplify code, despite it being slower, so it may be possible to factorize
-        #  better now. e.g.
-        #   X = -(NR - NR.r) + (NR - NR.r) * NR.v * NR.vg - (NR - NR.r) * NR.v
+        # And factorizing (NR - NR.r) gives:
         #   X = (NR - NR.r) * (-1 + 1 * NR.v * NR.vg - 1 * NR.v)
         #   X = (NR - NR.r) * (-1 + NR.v * NR.vg - NR.v)
-        #   X = (NR - NR.r) * (-1 + NR.v(NR.vg - 1))
-        #   X = difference_co_flat * (-1 + NR.v(NR.vg - 1))
-        # OUTDATED:
-        # In the case of there being a vertex group, it is too costly to calculate NR.vg on its own, so we will leave it
-        # at:
+        #   X = (NR - NR.r) * (-1 + NR.v * (NR.vg - 1))
+        #   X = difference_co_flat * (-1 + NR.v * (NR.vg - 1))
+        #
+        # However, difference_co_flat, difference_co_flat_scaled and difference_co_flat_value_scaled have already been
+        # calculated, which can be used to achieve the same result with fewer operations:
         #   X = -(NR - NR.r) + difference_co_flat_scaled - (NR - NR.r) * NR.v
         #   Which we can either factor to
         #       X = (NR - NR.r)(-1 - NR.v) + difference_co_flat_scaled
