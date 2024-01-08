@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Apply Shape Key to Basis",
     "author": "Mysteryem",
-    "version": (0, 0, 2),
+    "version": (0, 1, 0),
     "blender": (3, 3, 0),
     "location": "Properties > Data > Shape Key Specials menu > Apply Shape Key to Basis",
     "description": "Adds a tool for applying the active shape key to the Basis and propagating the change to dependent"
@@ -37,6 +37,7 @@ from bpy.types import (
 )
 
 from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import cast, TypeVar
 
 import numpy as np
@@ -76,6 +77,127 @@ class OperatorBase(Operator):
         """
         cls.poll_message_set(message)
         return False
+
+
+def _shape_key_co_memory_as_ndarray(shape_key: ShapeKey, do_check: bool = True):
+    """
+    ShapeKey.data elements have a dynamic typing based on the Object the shape keys are attached to, which makes them
+    slower to access with foreach_get. For 'MESH' type Objects, the elements are always ShapeKeyPoint type and their
+    data is stored contiguously, meaning an array can be constructed from the pointer to the first ShapeKeyPoint
+    element.
+
+    Creating an array from a pointer is inherently unsafe, so this function does a number of checks to make it safer.
+    """
+    if do_check and not _fast_mesh_shape_key_co_check():
+        return None
+    shape_data = shape_key.data
+    num_co = len(shape_data)
+
+    if num_co < 2:
+        # At least 2 elements are required to check memory size.
+        return None
+
+    co_dtype = np.dtype(np.single)
+
+    start_address = shape_data[0].as_pointer()
+    last_element_start_address = shape_data[-1].as_pointer()
+
+    memory_length_minus_one_item = last_element_start_address - start_address
+
+    expected_element_size = co_dtype.itemsize * 3
+    expected_memory_length = (num_co - 1) * expected_element_size
+
+    if memory_length_minus_one_item == expected_memory_length:
+        # Use NumPy's array interface protocol to construct an array from the pointer.
+        array_interface_holder = SimpleNamespace(
+            __array_interface__=dict(
+                shape=(num_co * 3,),
+                typestr=co_dtype.str,
+                data=(start_address, False),  # False for writable
+                version=3,
+            )
+        )
+        return np.asarray(array_interface_holder)
+    else:
+        return None
+
+
+# Initially set to None
+_USE_FAST_SHAPE_KEY_CO_FOREACH_GETSET = None
+
+
+def _fast_mesh_shape_key_co_check():
+    global _USE_FAST_SHAPE_KEY_CO_FOREACH_GETSET
+    if _USE_FAST_SHAPE_KEY_CO_FOREACH_GETSET is not None:
+        # The check has already been run and the result has been stored in _USE_FAST_SHAPE_KEY_CO_FOREACH_GETSET.
+        return _USE_FAST_SHAPE_KEY_CO_FOREACH_GETSET
+
+    tmp_mesh = None
+    tmp_object = None
+    try:
+        tmp_mesh = bpy.data.meshes.new("")
+        num_co = 100
+        tmp_mesh.vertices.add(num_co)
+        # An Object is needed to add/remove shape keys from a Mesh.
+        tmp_object = bpy.data.objects.new("", tmp_mesh)
+        shape_key = tmp_object.shape_key_add(name="")
+        shape_data = shape_key.data
+
+        if shape_key.bl_rna.properties["data"].fixed_type == shape_data[0].bl_rna:
+            # The shape key "data" collection is no longer dynamically typed and foreach_get/set should be fast enough.
+            _USE_FAST_SHAPE_KEY_CO_FOREACH_GETSET = False
+            return False
+
+        co_dtype = np.dtype(np.single)
+
+        # Fill the shape key with some data.
+        shape_data.foreach_set("co", np.arange(3 * num_co, dtype=co_dtype))
+
+        # The check is this function, so explicitly don't do the check.
+        co_memory_as_array = _shape_key_co_memory_as_ndarray(shape_key, do_check=False)
+        if co_memory_as_array is not None:
+            # Immediately make a copy in case the `foreach_get` afterward can cause the memory to be reallocated.
+            co_array_from_memory = co_memory_as_array.copy()
+            del co_memory_as_array
+            # Check that the array created from the pointer has the exact same contents
+            # as using foreach_get.
+            co_array_check = np.empty(num_co * 3, dtype=co_dtype)
+            shape_data.foreach_get("co", co_array_check)
+            if np.array_equal(co_array_check, co_array_from_memory, equal_nan=True):
+                _USE_FAST_SHAPE_KEY_CO_FOREACH_GETSET = True
+                return True
+
+        # Something didn't work.
+        print("Fast shape key co access failed. Access will fall back to regular foreach_get/set.")
+        _USE_FAST_SHAPE_KEY_CO_FOREACH_GETSET = False
+        return False
+    finally:
+        # Clean up temporary objects.
+        if tmp_object is not None:
+            tmp_object.shape_key_clear()
+            bpy.data.objects.remove(tmp_object)
+        if tmp_mesh is not None:
+            bpy.data.meshes.remove(tmp_mesh)
+
+
+def fast_mesh_shape_key_co_foreach_get(shape_key: ShapeKey, arr: np.ndarray):
+    co_memory_as_array = _shape_key_co_memory_as_ndarray(shape_key)
+    if co_memory_as_array is not None:
+        arr[:] = co_memory_as_array
+    else:
+        shape_key.data.foreach_get("co", arr)
+
+
+def fast_mesh_shape_key_co_foreach_set(shape_key: ShapeKey, arr: np.ndarray):
+    co_memory_as_array = _shape_key_co_memory_as_ndarray(shape_key)
+    if co_memory_as_array is not None:
+        co_memory_as_array[:] = arr
+        # Unsure if this is required. I don't think `.update()` actually does anything, nor do I think #foreach_set
+        # calls any function equivalent to `.update()` either.
+        # Memory has been set directly, so call `.update()`.
+        shape_key.data.update()
+    else:
+        shape_key.data.foreach_set("co", arr)
 
 
 # Blender Classes
@@ -344,8 +466,8 @@ def apply_new_reference_key(obj: Object,
     new_ref_co_flat = np.empty(flat_co_length, dtype=np.single)
     new_ref_relative_key_co_flat = np.empty(flat_co_length, dtype=np.single)
 
-    new_ref.data.foreach_get("co", new_ref_co_flat)
-    new_ref.relative_key.data.foreach_get("co", new_ref_relative_key_co_flat)
+    fast_mesh_shape_key_co_foreach_get(new_ref, new_ref_co_flat)
+    fast_mesh_shape_key_co_foreach_get(new_ref.relative_key, new_ref_relative_key_co_flat)
 
     # This is movement of `new_ref` at a value of 1.0.
     difference_co_flat = np.subtract(new_ref_co_flat, new_ref_relative_key_co_flat)
@@ -390,8 +512,9 @@ def apply_new_reference_key(obj: Object,
         )
         # And now the rest of the Shape Keys
         for key_block in keys_not_relative_to_new_ref_and_not_new_ref - {new_ref.relative_key}:
-            key_block.data.foreach_get("co", temp_co_array)
-            key_block.data.foreach_set("co", np.add(temp_co_array, difference_co_flat_scaled, out=temp_co_array))
+            fast_mesh_shape_key_co_foreach_get(key_block, temp_co_array)
+            fast_mesh_shape_key_co_foreach_set(key_block,
+                                               np.add(temp_co_array, difference_co_flat_scaled, out=temp_co_array))
 
         # Shorthand key:
         # NB = new_ref
@@ -451,12 +574,12 @@ def apply_new_reference_key(obj: Object,
 
             # The coordinates for `new_ref` have already been acquired, so `new_ref` can be done separately from the
             # others to save a #foreach_get call.
-            new_ref.data.foreach_set("co", np.add(new_ref_co_flat, temp_co_array2, out=temp_co_array))
+            fast_mesh_shape_key_co_foreach_set(new_ref, np.add(new_ref_co_flat, temp_co_array2, out=temp_co_array))
 
             # Now add to the rest of the keys
             for key_block in keys_relative_to_new_ref:
-                key_block.data.foreach_get("co", temp_co_array)
-                key_block.data.foreach_set("co", np.add(temp_co_array, temp_co_array2, out=temp_co_array))
+                fast_mesh_shape_key_co_foreach_get(key_block, temp_co_array)
+                fast_mesh_shape_key_co_foreach_set(key_block, np.add(temp_co_array, temp_co_array2, out=temp_co_array))
         # But for there not being a vertex group, the NB.vg term can be eliminated as it becomes effectively 1.0:
         #   X = -(NB - NB.r) + (NB - NB.r) * NB.v - (NB - NB.r) * NB.v
         # Then the last part cancels out:
@@ -472,11 +595,12 @@ def apply_new_reference_key(obj: Object,
             # Rearrange for NB.r:
             #   NB.r = NB - difference_co_flat
             # Instead of doing `np.subtract(new_ref_co_flat, difference_co_flat)`, NB can simply be set to NB.r.
-            new_ref.data.foreach_set("co", new_ref_relative_key_co_flat)
+            fast_mesh_shape_key_co_foreach_set(new_ref, new_ref_relative_key_co_flat)
             # And the rest of the Shape Keys
             for key_block in keys_relative_to_new_ref:
-                key_block.data.foreach_get("co", temp_co_array)
-                key_block.data.foreach_set("co", np.subtract(temp_co_array, difference_co_flat, out=temp_co_array))
+                fast_mesh_shape_key_co_foreach_get(key_block, temp_co_array)
+                fast_mesh_shape_key_co_foreach_set(key_block,
+                                                   np.subtract(temp_co_array, difference_co_flat, out=temp_co_array))
     else:
         # `new_ref` is not relative to the Reference Key so the Shape Keys `new_ref` is relative to will remain
         # unchanged.
@@ -488,8 +612,9 @@ def apply_new_reference_key(obj: Object,
         # Add the difference between `new_ref` and `new_ref.relative_key` (scaled according to the `.value` and
         # `.vertex_group` of `new_ref`).
         for key_block in keys_relative_to_old_ref:
-            key_block.data.foreach_get("co", temp_co_array)
-            key_block.data.foreach_set("co", np.add(temp_co_array, difference_co_flat_scaled, out=temp_co_array))
+            fast_mesh_shape_key_co_foreach_get(key_block, temp_co_array)
+            fast_mesh_shape_key_co_foreach_set(key_block,
+                                               np.add(temp_co_array, difference_co_flat_scaled, out=temp_co_array))
 
         # The difference between the reversed Shape Key and its Relative Key needs to equal the negative of the
         # difference between `new_ref` and `new_ref`.relative_key multiplied.
@@ -526,16 +651,16 @@ def apply_new_reference_key(obj: Object,
 
         # The coordinates for `new_ref` have already been acquired, so it can be done separately from the others to save
         # a #foreach_get call.
-        new_ref.data.foreach_set("co", np.add(new_ref_co_flat, temp_co_array2, out=temp_co_array))
+        fast_mesh_shape_key_co_foreach_set(new_ref, np.add(new_ref_co_flat, temp_co_array2, out=temp_co_array))
         # And now the rest of the Shape Keys.
         for key_block in keys_relative_to_new_ref:
-            key_block.data.foreach_get("co", temp_co_array)
-            key_block.data.foreach_set("co", np.add(temp_co_array, temp_co_array2, out=temp_co_array))
+            fast_mesh_shape_key_co_foreach_get(key_block, temp_co_array)
+            fast_mesh_shape_key_co_foreach_set(key_block, np.add(temp_co_array, temp_co_array2, out=temp_co_array))
 
     # Update Mesh Vertices to avoid reference Shape Key and Mesh Vertices being desynced until Edit mode has been
     # entered and exited, which can cause odd behaviour when creating Shape Keys with `from_mix=False`, when removing
     # all Shape Keys or exporting as a format that supports exporting Shape Keys.
-    mesh.shape_keys.reference_key.data.foreach_get("co", temp_co_array)
+    fast_mesh_shape_key_co_foreach_get(mesh.shape_keys.reference_key, temp_co_array)
     mesh.vertices.foreach_set("co", temp_co_array)
 
 
