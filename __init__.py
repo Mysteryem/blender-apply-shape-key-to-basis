@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Apply Shape Key to Basis",
     "author": "Mysteryem",
-    "version": (0, 0, 1),
+    "version": (0, 0, 2),
     "blender": (3, 3, 0),
     "location": "Properties > Data > Shape Key Specials menu > Apply Shape Key to Basis",
     "description": "Adds a tool for applying the active shape key to the Basis and propagating the change to dependent"
@@ -87,11 +87,11 @@ class OperatorBase(Operator):
 @set_operator_description_from_doc
 class ApplyShapeKeyToReferenceKey(OperatorBase):
     """
-    Applies the active shape key with its current value (if non-zero) and vertex group (if set) to the reference shape
-    key (usually called 'Basis') and all shape keys recursively relative to it.
-
-    And modifies the active shape key into a shape key that reverts the original application when applied.
+    Applies the active shape key at its current strength (if non-zero) to the reference shape key (usually 'Basis'), and
+    then inverts the active shape key so that it reverts its application.
     """
+    # Blender 3.3 is the current oldest LTS and still has a small maximum length for Operator descriptions, so the
+    # description can't be too long.
     bl_idname = "mysteryem.apply_shape_key_to_reference_key"
     # The label uses "Basis" because that is what most users are familiar with, though the reference Shape Key can have
     # any name.
