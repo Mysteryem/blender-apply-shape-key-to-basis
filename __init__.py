@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Apply Shape Key to Basis",
     "author": "Mysteryem",
-    "version": (0, 1, 1),
+    "version": (1, 0, 0),
     "blender": (3, 3, 0),
     "location": "Properties > Data > Shape Key Specials menu > Apply Shape Key to Basis",
     "description": "Adds a tool for applying the active shape key to the Basis and propagating the change to dependent"
